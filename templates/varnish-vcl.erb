@@ -44,14 +44,17 @@ sub vcl_recv {
   if (req.http.Cookie) {
     set req.http.Cookie = ";"+req.http.Cookie;
     set req.http.Cookie = regsuball(req.http.Cookie, ";(<%- @cookiekeeps.each do |cookie| -%><%= cookie %><%- if cookie != @cookiekeeps[-1] -%>|<%-end-%><%-end-%>)=", "; \1=");
-    set req.http.Cookie = regsuball(req.http.Cookie, ";[^ ][^;]*", "");
-    set req.http.Cookie = regsuball(req.http.Cookie, "^[; ]+|[; ]+$", "");
-    
+        
+    set req.http.Cookie = regsuball(req.http.Cookie, "_gig.*=", "");
+    set req.http.Cookie = regsuball(req.http.Cookie, "activeTab.*", "");
     set req.http.Cookie = regsuball(req.http.Cookie, "has_js=[^;]+(; )?", "");
     set req.http.Cookie = regsuball(req.http.Cookie, "Drupal.toolbar.collapsed=[^;]+(; )?", "");
     set req.http.Cookie = regsuball(req.http.Cookie, "__utm.=[^;]+(; )?", "");
     
     set req.http.Cookie = regsuball(req.http.Cookie, ";(SESS[a-z0-9]+|NO_CACHE)=", "; \1=");
+    
+    set req.http.Cookie = regsuball(req.http.Cookie, ";[^ ][^;]*", "");
+    set req.http.Cookie = regsuball(req.http.Cookie, "^[; ]+|[; ]+$", "");
     
     if (req.http.Cookie ~ "^\s*$") {
       unset req.http.Cookie;
@@ -250,14 +253,16 @@ sub vcl_fetch {
   if ( beresp.http.Content-Length ~ "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]" ) { 
     set beresp.ttl = <%= @static_cache_time %>; 
     return (hit_for_pass);
-  } 
+  }
+  
+  return(deliver);
 }
 
 sub vcl_deliver {
   if (obj.hits > 0) {
-    set resp.http.X-Cache = "HIT";
+    set resp.http.X-Varnish-Cache = "HIT";
   } else {
-    set resp.http.X-Cache = "MISS";
+    set resp.http.X-Varnish-Cache = "MISS";
   }
 }
 
