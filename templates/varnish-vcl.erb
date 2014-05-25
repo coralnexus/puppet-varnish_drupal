@@ -16,15 +16,10 @@ include "includes/directors.vcl";
 include "includes/acls.vcl";
 
 sub vcl_recv {
- 
+  
   # Force look-up if request is a no-cache request.     
   if (req.http.Cache-Control ~ "no-cache") {
     return (pass);
-  }
-   
-  # Use anonymous, cached pages if all backends are down.
-  if (!req.backend.healthy) {
-    unset req.http.Cookie;
   }
 
 <%- if @defaultgrace -%>
@@ -54,30 +49,27 @@ sub vcl_recv {
   #    no space after the preceding semi-colon.
   # 5. Remove all spaces and semi-colons from the beginning and end of the
   #    cookie string.
-  if (req.http.Cookie) {
-    set req.http.Cookie = ";" + req.http.Cookie;
-    set req.http.Cookie = regsuball(req.http.Cookie, "; +", ";");
-    set req.http.Cookie = regsuball(req.http.Cookie, ";(<%- @cookiekeeps.each do |cookie| -%><%= cookie %><%- if cookie != @cookiekeeps[-1] -%>|<%-end-%><%-end-%>)=", "; \1=");
-    set req.http.Cookie = regsuball(req.http.Cookie, ";(S{1,2}ESS[a-z0-9]+|NO_CACHE)=", "; \1=");
-    set req.http.Cookie = regsuball(req.http.Cookie, ";[^ ][^;]*", "");
-    set req.http.Cookie = regsuball(req.http.Cookie, "^[; ]+|[; ]+$", "");
+  if (!(req.http.Content-Type ~ "multipart/form-data")) {
+    if (req.http.Cookie) {
+      set req.http.Cookie = ";" + req.http.Cookie;
+      set req.http.Cookie = regsuball(req.http.Cookie, "; +", ";");
+      set req.http.Cookie = regsuball(req.http.Cookie, ";(<%- @cookiekeeps.each do |cookie| -%><%= cookie %><%- if cookie != @cookiekeeps[-1] -%>|<%-end-%><%-end-%>)=", "; \1=");
+      set req.http.Cookie = regsuball(req.http.Cookie, ";(S{1,2}ESS[a-z0-9]+|NO_CACHE)=", "; \1=");
+      set req.http.Cookie = regsuball(req.http.Cookie, ";[^ ][^;]*", "");
+      set req.http.Cookie = regsuball(req.http.Cookie, "^[; ]+|[; ]+$", "");
 
-    if (req.http.Cookie == "") {
-      # If there are no remaining cookies, remove the cookie header. If there
-      # aren't any cookie headers, Varnish's default behavior will be to cache
-      # the page.
-      unset req.http.Cookie;
+      if (req.http.Cookie == "") {
+        # If there are no remaining cookies, remove the cookie header. If there
+        # aren't any cookie headers, Varnish's default behavior will be to cache
+        # the page.
+        unset req.http.Cookie;
+      }
     }
-  }
 
-  # Always cache the following file types for all users.
-  if (
-     # Static file cache
-     (req.url ~ "(?i)\.(html|htm|jpg|jpeg|gif|png|tiff|tif|svg|swf|ico|css|kss|js|vsd|doc|ppt|pps|xls|pdf|mp3|mp4|m4a|ogg|mov|avi|wmv|sxw|zip|gz|bz2|tar|rar|odc|odb|odf|odg|odi|odp|ods|odt|sxc|sxd|sxi|sxw|dmg|torrent|deb|msi|iso|rpm|jar|class|flv|exe)(\?[a-z0-9]+)?$")||
-     # Plone images cache
-     (req.url ~ "(?i)(image|imagem_large|image_preview|image_mini|image_thumb|image_tile|image_icon|imagem_listing)$")
-     ) {
-     remove req.http.Cookie;
+    # Always cache the following file types for all users.
+    if (req.url ~ "(?i)\.(html|htm|jpg|jpeg|gif|png|tiff|tif|svg|swf|ico|css|kss|js|vsd|doc|ppt|pps|xls|pdf|mp3|mp4|m4a|ogg|mov|avi|wmv|sxw|zip|gz|bz2|tar|rar|odc|odb|odf|odg|odi|odp|ods|odt|sxc|sxd|sxi|sxw|dmg|torrent|deb|msi|iso|rpm|jar|class|flv|exe)(\?[a-z0-9]+)?$") {
+      remove req.http.Cookie;
+    }
   }
     
   # Handling of different encoding types.
@@ -132,10 +124,11 @@ sub vcl_recv {
     error 200 "Added ban.";      
   }
 
+  # Ignore anything but GET and HEAD requests.
   if (req.request != "GET" && req.request != "HEAD") {
-     return (pipe);
+    return (pass);
   }
-  
+ 
   #-----------------------------------------------------------------------------
   # Drupal specific settings
 
