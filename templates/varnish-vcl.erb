@@ -23,12 +23,12 @@ sub vcl_recv {
 
   unset req.http.If-Modified-Since;
   unset req.http.If-None-Match;
- 
+
   # Modify HTTP X-Forwarded-For header.
   # This will replace Varnish's IP with actual client's.
   remove req.http.X-Forwarded-For;
   set    req.http.X-Forwarded-For = client.ip;
- 
+
   # Remove all cookies that Drupal doesn't need to know about. ANY remaining
   # cookie will cause the request to pass-through to a backend. For the most part
   # we always set the NO_CACHE cookie after any POST request, disabling the
@@ -65,7 +65,7 @@ sub vcl_recv {
       remove req.http.Cookie;
     }
   }
-    
+
   # Handling of different encoding types.
   if (req.http.Accept-Encoding) {
     if (req.url ~ "\.(jpg|png|gif|gz|tgz|bz2|tbz|mp3|ogg)$") {
@@ -80,18 +80,21 @@ sub vcl_recv {
     else {
       remove req.http.Accept-Encoding;
     }
-  }  
+  }
 
+  <%- if @blockedips.length > 0 -%>
   # Blocked list
   if ((client.ip ~ blockedips)<%- if @blockedbots.length > 0 -%>||(req.http.User-Agent ~ "(?i)<%- @blockedbots.each do |bot| -%><%= bot %><%- if cookie != @blockedbots[-1] -%>|<%-end-%><%-end-%>")<%-end-%>) {
     error 403 "Access forbidden.";
   }
+  <%- end -%>
 
+  <%- if @enable_waf -%>
   # Web Application Firewall
   # These rules are defined by a number between semicolons. Example: ;48;
   # All expections must be defined at the req.http.EXCE variable
   # DO NOT MODIFY waf.vcl FILE!
-  
+
   set req.http.EXCE = ";<%- @wafexceptions.each do |exce| -%><%= exce %>;<%-end-%>";
   set req.http.RULE = "";
 
@@ -102,27 +105,30 @@ sub vcl_recv {
   }
   remove req.http.EXCE;
   remove req.http.RULE;
+  <%- end -%>
 
   # backend selection logic
   include "includes/backendselection.vcl";
 
+  <%- if @purgeips.length > 0 -%>
   # Allows purge for the IPs in purge ACL
   if (req.request == "PURGE") {
     if (!(client.ip ~ purge)) {
         error 405 "Not allowed.";
     }
     ban(" req.url == " + req.url);
-    set req.url = regsuball(req.url,"80","443"); 
+    set req.url = regsuball(req.url,"80","443");
     set req.url = regsuball(req.url,"http","https");
     ban(" req.url == " + req.url);
-    error 200 "Added ban.";      
+    error 200 "Added ban.";
   }
+  <%- end -%>
 
   # Ignore anything but GET and HEAD requests.
   if (req.request != "GET" && req.request != "HEAD") {
     return (pass);
   }
- 
+
   #-----------------------------------------------------------------------------
   # Drupal specific settings
 
@@ -131,28 +137,28 @@ sub vcl_recv {
     set req.url = "/misc/progress.js";
   }
 
-  # Do not allow outside access to cron.php, update.php, or install.php.  
-  if (req.url ~ "^/(cron|install|update)\.php$" && !client.ip ~ internal) {        
+  # Do not allow outside access to cron.php, update.php, or install.php.
+  if (req.url ~ "^/(cron|install|update)\.php$" && !client.ip ~ internal) {
     error 404 "Page not found.";
   }
-  
-  # Cache static content of themes and files.  
+
+  # Cache static content of themes and files.
   if (req.url ~ "^/themes/" && req.url ~ ".(css|js|png|gif|jp(e)?g)") {
     unset req.http.Cookie;
   }
   if (req.url ~ "^/sites/") {
     unset req.http.Cookie;
   }
-  
+
   # Catch Drupal misc files (like drupal.js and jquery.js)
   if (req.url ~ "^/misc/") {
     unset req.http.Cookie;
-  } 
+  }
   # Drupal js/css doesn’t need cookies, cache them
   if (req.url ~ "^/modules/.*\.(js|css)\?") {
     unset req.http.Cookie;
   }
-  
+
   # Do not cache these URL paths.
   if (req.url ~ "^/status\.php$" ||
       req.url ~ "^/update\.php$" ||
@@ -166,13 +172,13 @@ sub vcl_recv {
       req.url ~ "^/flag/.*$" ||
       req.url ~ "^.*/ajax/?.*$" ||
       req.url ~ "^.*/ahah/?.*$") {
-      
+
        return (pass);
   }
 
   # End Drupal
   #-----------------------------------------------------------------------------
-  
+
   return (lookup);
 }
 
@@ -180,7 +186,7 @@ sub vcl_hash {
 }
 
 sub vcl_pipe {
-  set req.http.Connection = "close";  
+  set req.http.Connection = "close";
   return (pipe);
 }
 
@@ -209,41 +215,41 @@ sub vcl_fetch {
 <%- if @defaultgrace -%>
   # Default grace period
   set req.grace = <%= @defaultgrace %>;
-  
+
   # Allow items to be stale if needed.
   set beresp.grace = <%= @defaultgrace %>;
 <%- end -%>
-  
+
   if (beresp.http.content-type ~ "<%- @gziptypes.each do |type| -%>^<%= type %><%- if type != @gziptypes[-1] -%>|<%-end-%><%-end-%>") {
      set beresp.do_gzip = true;
   }
- 
-  # Remove I18N_LANGUAGE Set-Cookie 
+
+  # Remove I18N_LANGUAGE Set-Cookie
   if (beresp.http.Set-Cookie ~ "I18N_LANGUAGE") {
     remove beresp.http.Set-Cookie;
   }
 
-  if ( 
+  if (
      # Static file cache
      (req.url ~ "(?i)\.(html|htm|jpg|jpeg|gif|png|tiff|tif|svg|swf|ico|css|kss|js|vsd|doc|ppt|pps|xls|pdf|mp3|mp4|m4a|ogg|mov|avi|wmv|sxw|zip|gz|bz2|tar|rar|odc|odb|odf|odg|odi|odp|ods|odt|sxc|sxd|sxi|sxw|dmg|torrent|deb|msi|iso|rpm|jar|class|flv|exe)(\?[a-z0-9]+)?$")||
      # Plone images cache
      (req.url ~ "(?i)(image|imagem_large|image_preview|image_mini|image_thumb|image_tile|image_icon|imagem_listing)$")
   ) {
     remove beresp.http.Set-Cookie;
-    set beresp.ttl = <%= @static_cache_time %>;    
+    set beresp.ttl = <%= @static_cache_time %>;
   }
 
-  # Default minimum cache period 
+  # Default minimum cache period
   if(!(req.http.Cookie)&&!(beresp.http.Set-Cookie)&&(req.request == "GET")) {
      set beresp.ttl = <%= @min_cache_time %>;
   }
 
   #Avoid cache of objects > 100M
-  if ( beresp.http.Content-Length ~ "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]" ) { 
-    set beresp.ttl = <%= @static_cache_time %>; 
+  if ( beresp.http.Content-Length ~ "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]" ) {
+    set beresp.ttl = <%= @static_cache_time %>;
     return (hit_for_pass);
   }
-  
+
   return(deliver);
 }
 
