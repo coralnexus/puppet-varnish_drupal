@@ -162,16 +162,15 @@ sub vcl_recv {
   # Do not cache these URL paths.
   if (req.url ~ "^/status\.php$" ||
       req.url ~ "^/update\.php$" ||
-      req.url ~ "^/admin/build/features" ||
       req.url ~ "^/cron\.php$" ||
-      req.url ~ "/edit/.*$" ||
+      req.url ~ "^.*/edit/.*$" ||
       req.url ~ "^/admin" ||
       req.url ~ "^/admin/.*$" ||
       req.url ~ "^/user/.*$" ||
       req.url ~ "^/info/.*$" ||
       req.url ~ "^/flag/.*$" ||
-      req.url ~ "^.*/ajax/?.*$" ||
-      req.url ~ "^.*/ahah/?.*$") {
+      req.url ~ "^.*/ajax/.*$" ||
+      req.url ~ "^.*/ahah/.*$") {
 
        return (pass);
   }
